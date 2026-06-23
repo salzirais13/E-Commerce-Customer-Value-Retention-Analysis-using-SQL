@@ -1,9 +1,7 @@
--- 1. Hapus tabel lama (jika ada) biar bersih
 DROP TABLE IF EXISTS olist_customers;
 DROP TABLE IF EXISTS olist_orders;
 DROP TABLE IF EXISTS olist_payments;
 
--- 2. Buat Tabel Customer (Sesuai olist_customers_dataset.csv)
 CREATE TABLE olist_customers (
     customer_id VARCHAR(500),
     customer_unique_id VARCHAR(500),
@@ -12,7 +10,6 @@ CREATE TABLE olist_customers (
     customer_state VARCHAR(500)
 );
 
--- 3. Buat Tabel Orders (Sesuai olist_orders_dataset.csv)
 CREATE TABLE olist_orders (
     order_id VARCHAR(500),
     customer_id VARCHAR(500),
@@ -24,7 +21,6 @@ CREATE TABLE olist_orders (
     order_estimated_delivery_date VARCHAR(500)
 );
 
--- 4. Buat Tabel Payments (Sesuai olist_order_payments_dataset.csv)
 CREATE TABLE olist_payments (
     order_id VARCHAR(500),
     payment_sequential VARCHAR(500),
@@ -40,35 +36,27 @@ SELECT
     c.customer_unique_id,
     o.order_id,
     o.order_status,
-    -- 1. Mengubah teks menjadi format TANGGAL & WAKTU resmi
     CAST(o.order_purchase_timestamp AS TIMESTAMP) AS order_date,
-    -- 2. Mengubah teks menjadi format ANGKA DESIMAL untuk uang
     CAST(p.payment_value AS NUMERIC) AS total_payment
 FROM olist_orders o
 JOIN olist_customers c ON o.customer_id = c.customer_id
 JOIN olist_payments p ON o.order_id = p.order_id
--- 3. Filter Bisnis: Hanya ambil pesanan yang sukses terkirim ke pelanggan
 WHERE o.order_status = 'delivered';
 
 SELECT * FROM v_ecommerce_clean LIMIT 10;
 
--- mulai frm --
+-- frm --
 WITH rfm_base AS (
-    -- Menghitung nilai dasar Recency, Frequency, dan Monetary per pelanggan
     SELECT
         customer_unique_id,
-        -- Recency: Selisih hari antara tanggal terakhir di dataset dengan tanggal belanja terakhir user
         DATE_PART('day', (SELECT MAX(order_date) FROM v_ecommerce_clean) - MAX(order_date)) AS recency,
-        -- Frequency: Jumlah pesanan unik
         COUNT(DISTINCT order_id) AS frequency,
-        -- Monetary: Total uang yang dikeluarkan
         SUM(total_payment) AS monetary
     FROM v_ecommerce_clean
     GROUP BY customer_unique_id
 ),
 
 rfm_scores AS (
-    -- Memberikan skor 1-5 menggunakan NTILE (Kuantil)
     SELECT
         customer_unique_id,
         recency,
@@ -80,7 +68,6 @@ rfm_scores AS (
     FROM rfm_base
 )
 
--- Segmentasi Akhir berdasarkan skor R dan F
 SELECT
     customer_unique_id,
     recency,
@@ -102,7 +89,6 @@ ORDER BY monetary DESC;
 
 --cohort analysis--
 WITH cohort_birth AS (
-    -- LANGKAH 1: Cari bulan pertama kali setiap pelanggan melakukan transaksi (Sudah diperbaiki pakai MIN)
     SELECT
         customer_unique_id,
         DATE_TRUNC('month', MIN(order_date)) AS cohort_month
@@ -111,7 +97,6 @@ WITH cohort_birth AS (
 ),
 
 customer_activities AS (
-    -- LANGKAH 2: Ambil semua bulan transaksi pelanggan dan pasangkan dengan bulan pertama mereka belanja
     SELECT
         v.customer_unique_id,
         c.cohort_month,
@@ -121,7 +106,6 @@ customer_activities AS (
 ),
 
 cohort_sizes AS (
-    -- LANGKAH 3: Hitung total pelanggan unik yang "lahir" di masing-masing Cohort Month
     SELECT
         cohort_month,
         COUNT(DISTINCT customer_unique_id) AS total_customers
@@ -130,7 +114,6 @@ cohort_sizes AS (
 ),
 
 retention_counts AS (
-    -- LANGKAH 4: Hitung selisih bulan (jarak) antara bulan pertama belanja dengan bulan belanja berikutnya
     SELECT
         cohort_month,
         (DATE_PART('year', activity_month) - DATE_PART('year', cohort_month)) * 12 +
@@ -140,7 +123,6 @@ retention_counts AS (
     GROUP BY cohort_month, period_month
 )
 
--- LANGKAH 5: Pivot hasilnya ke samping agar membentuk tabel matriks yang rapi
 SELECT
     r.cohort_month,
     s.total_customers AS month_0_awal,
